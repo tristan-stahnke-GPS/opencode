@@ -1,7 +1,7 @@
 import z from "zod"
 import { Filesystem } from "../util/filesystem"
 import path from "path"
-import { Database, eq } from "../storage/db"
+import { Database, eq, and } from "../storage/db"
 import { ProjectTable } from "./project.sql"
 import { SessionTable } from "../session/session.sql"
 import { Log } from "../util/log"
@@ -302,16 +302,17 @@ export namespace Project {
     if (!row) return
 
     const sessions = Database.use((db) =>
-      db.select().from(SessionTable).where(eq(SessionTable.project_id, "global")).all(),
+      db
+        .select()
+        .from(SessionTable)
+        .where(and(eq(SessionTable.project_id, "global"), eq(SessionTable.directory, worktree)))
+        .all(),
     )
     if (sessions.length === 0) return
 
     log.info("migrating sessions from global", { newProjectID: id, worktree, count: sessions.length })
 
     await work(10, sessions, async (row) => {
-      // Skip sessions that belong to a different directory
-      if (row.directory && row.directory !== worktree) return
-
       log.info("migrating session", { sessionID: row.id, from: "global", to: id })
       Database.use((db) => db.update(SessionTable).set({ project_id: id }).where(eq(SessionTable.id, row.id)).run())
     }).catch((error) => {
